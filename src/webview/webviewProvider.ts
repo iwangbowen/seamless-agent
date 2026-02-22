@@ -101,16 +101,21 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
 
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage((message: FromWebviewMessage) => {
+            if (message.type === 'webviewReady') {
+                // Webview script has loaded and is ready to receive messages
+                this._showHome();
+                return;
+            }
             void this._handleWebviewMessage(message);
         }, undefined, []);
 
-        // Always show home view first (which includes pending requests and recent sessions)
-        this._showHome();
-
-        // Update badge count
-        if (this._pendingRequests.size > 0) {
-            this._setBadge(this._pendingRequests.size);
-        }
+        // Clear the reference when the view is disposed so that
+        // waitForUserResponse will re-focus and re-resolve the view.
+        webviewView.onDidDispose(() => {
+            if (this._view === webviewView) {
+                this._view = undefined;
+            }
+        });
     }
 
     /**
@@ -1036,6 +1041,11 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
 
             pending.resolve(cleanResult);
             this._pendingRequests.delete(requestId);
+
+            // Clear selected request if this was the one being viewed
+            if (this._selectedRequestId === requestId) {
+                this._selectedRequestId = null;
+            }
 
             // Clear last opened if this was the last opened request
             if (this._lastOpenedRequestId === requestId) {

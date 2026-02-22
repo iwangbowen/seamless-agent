@@ -3147,6 +3147,9 @@ import { truncate } from './utils';
     // Initialize delegated handler for history list clicks/keys
     initHistoryListDelegation();
 
+    // Notify extension that webview is ready to receive messages
+    vscode.postMessage({ type: 'webviewReady' });
+
 })();
 
 // Type declaration for VS Code API
