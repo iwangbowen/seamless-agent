@@ -160,6 +160,8 @@ declare global {
         };
         __CONFIG__: {
             historyTimeDisplay: 'relative' | 'absolute' | 'hybrid';
+            debugSimulation: boolean;
+            debugSimulatedBadge: string;
         };
     }
 }
@@ -238,6 +240,7 @@ import { truncate } from './utils';
     // Tab content elements
     const contentPending = document.getElementById('content-pending');
     const contentHistory = document.getElementById('content-history');
+    const contentDebug = document.getElementById('content-debug');
 
     // Batch selection elements
     const batchSelectBtn = document.getElementById('batch-select-btn');
@@ -256,7 +259,10 @@ import { truncate } from './utils';
     // History filter state
     let currentHistoryFilter: string = 'all';
 
-    type HomeTab = 'pending' | 'history';
+    // Debug simulation state
+    let debugSimulationEnabled: boolean = window.__CONFIG__?.debugSimulation ?? false;
+
+    type HomeTab = 'pending' | 'history' | 'debug';
 
     function setHomeToolbarActiveTab(tab: HomeTab): void {
         document.querySelectorAll('.home-toolbar-btn[data-tab]').forEach(btn => {
@@ -319,6 +325,89 @@ import { truncate } from './utils';
             btn.addEventListener('click', () => {
                 const tab = (btn.getAttribute('data-tab') || 'pending') as HomeTab;
                 switchTab(tab);
+            });
+        });
+    }
+
+    /**
+     * Show or hide the debug simulate button based on settings.
+     */
+    function updateDebugButtonVisibility(): void {
+        const debugBtn = document.getElementById('debug-simulate-btn');
+        if (debugBtn) {
+            debugBtn.style.display = debugSimulationEnabled ? '' : 'none';
+        }
+    }
+
+    /**
+     * Initialize debug simulation tab: wire up tool buttons with preset parameters.
+     */
+    function initDebugSimulation(): void {
+        // Apply initial button visibility
+        updateDebugButtonVisibility();
+
+        // Preset parameters for each simulated tool variant
+        const presets: Record<string, () => void> = {
+            // Plain question — no options
+            ask_user_plain: () => vscode.postMessage({
+                type: 'simulateTool',
+                toolType: 'ask_user',
+                params: {
+                    question: 'This is a simulated plain question.\n\nPlease type your response in the text box below.',
+                    title: 'Debug: Plain Question',
+                    agentName: 'Debug Agent',
+                }
+            }),
+            // Question with single option group
+            ask_user_options: () => vscode.postMessage({
+                type: 'simulateTool',
+                toolType: 'ask_user',
+                params: {
+                    question: 'This is a simulated question with options.\n\nPlease pick one of the options below.',
+                    title: 'Debug: Question with Options',
+                    agentName: 'Debug Agent',
+                    options: ['Option A', 'Option B', 'Option C'],
+                }
+            }),
+            // Multi-step question with multiple grouped option sets
+            ask_user_steps: () => vscode.postMessage({
+                type: 'simulateTool',
+                toolType: 'ask_user',
+                params: {
+                    question: 'This is a simulated multi-step question.\n\nPlease answer each group of options.',
+                    title: 'Debug: Multi-step Question',
+                    agentName: 'Debug Agent',
+                    options: [
+                        { title: 'Step 1 – Choose a category', options: ['Frontend', 'Backend', 'Fullstack'], multiSelect: false },
+                        { title: 'Step 2 – Choose features', options: ['Auth', 'Logging', 'Tests', 'Docker'], multiSelect: true },
+                        { title: 'Step 3 – Choose environment', options: ['Development', 'Staging', 'Production'], multiSelect: false },
+                    ],
+                }
+            }),
+            plan_review: () => vscode.postMessage({
+                type: 'simulateTool',
+                toolType: 'plan_review',
+                params: {
+                    plan: '# Debug Plan\n\n## Step 1\nDo something useful.\n\n## Step 2\nVerify the result.',
+                    title: 'Debug: Plan Review',
+                    mode: 'review',
+                }
+            }),
+            walkthrough_review: () => vscode.postMessage({
+                type: 'simulateTool',
+                toolType: 'walkthrough_review',
+                params: {
+                    plan: '# Debug Walkthrough\n\n## Introduction\nWelcome to the walkthrough.\n\n## Step 1\nFirst step content.',
+                    title: 'Debug: Walkthrough',
+                    mode: 'walkthrough',
+                }
+            }),
+        };
+
+        document.querySelectorAll('.debug-tool-btn[data-tool]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tool = btn.getAttribute('data-tool') || '';
+                presets[tool]?.();
             });
         });
     }
@@ -928,6 +1017,13 @@ import { truncate } from './utils';
                 const numberBadge = el('span', { className: 'request-item-number-inline', text: `${orderNum}. ` });
                 const titleText = el('span', { text: req.title });
                 appendChildren(titleEl, numberBadge, titleText);
+                if (req.isSimulated) {
+                    const simBadge = el('span', {
+                        className: 'sim-badge',
+                        title: window.__CONFIG__?.debugSimulatedBadge || 'Simulated'
+                    }, codicon('bug'));
+                    titleEl.appendChild(simBadge);
+                }
 
                 const previewEl = el('div', { className: 'request-item-preview', text: truncate(req.question, 100) });
                 const metaEl = el('div', { className: 'request-item-meta' });
@@ -1462,10 +1558,11 @@ import { truncate } from './utils';
     /**
  * Switch between tabs in the home view
  */
-    function switchTab(tab: 'pending' | 'history'): void {
+    function switchTab(tab: HomeTab): void {
         // Update content panes visibility
         contentPending?.classList.toggle('hidden', tab !== 'pending');
         contentHistory?.classList.toggle('hidden', tab !== 'history');
+        contentDebug?.classList.toggle('hidden', tab !== 'debug');
 
         setHomeToolbarActiveTab(tab);
 
@@ -1473,9 +1570,10 @@ import { truncate } from './utils';
         const tabNames: Record<string, string> = {
             pending: window.__STRINGS__?.pendingItems || 'Pending Items',
             history: window.__STRINGS__?.chatHistory || 'Chat History',
+            debug: 'Debug Simulation',
         };
 
-        announceToScreenReader(`${tabNames[tab]}tab selected`);
+        announceToScreenReader(`${tabNames[tab] ?? tab} tab selected`);
     }
 
     /**
@@ -1678,6 +1776,13 @@ import { truncate } from './utils';
 
             const title = el('div', { className: 'request-item-title' });
             appendChildren(title, codicon('file-text'), ' ', (review.title || 'Plan Review'));
+            if (review.isSimulated) {
+                const simBadge = el('span', {
+                    className: 'sim-badge',
+                    title: window.__CONFIG__?.debugSimulatedBadge || 'Simulated'
+                }, codicon('bug'));
+                title.appendChild(simBadge);
+            }
 
             const preview = el('div', { className: 'request-item-preview', text: truncate(review.plan || '', 100) });
 
@@ -1726,6 +1831,7 @@ import { truncate } from './utils';
             title: string;
             preview: string;
             status?: string;
+            isSimulated?: boolean;
         };
 
         const entries: UnifiedEntry[] = [];
@@ -1742,7 +1848,8 @@ import { truncate } from './utils';
                 timestamp: interaction.timestamp,
                 title,
                 preview,
-                status: interaction.status
+                status: interaction.status,
+                isSimulated: interaction.isSimulated,
             });
         }
 
@@ -1784,6 +1891,13 @@ import { truncate } from './utils';
             const titleWrapper = el('div', { className: 'history-item-title-wrapper' });
             const title = el('div', { className: 'history-item-title', text: entry.title });
             titleWrapper.appendChild(title);
+            if (entry.isSimulated) {
+                const simBadge = el('span', {
+                    className: 'sim-badge',
+                    title: window.__CONFIG__?.debugSimulatedBadge || 'Simulated'
+                }, codicon('bug'));
+                titleWrapper.appendChild(simBadge);
+            }
 
             // Meta: time + status badge (inline on first line)
             const meta = el('div', { className: 'history-item-meta' });
@@ -3045,6 +3159,8 @@ import { truncate } from './utils';
             case 'updatePendingCount': updatePendingCountBadge(message.count, message.requestOrder);
                 break;
             case 'showHome': recentInteractions = message.recentInteractions || [];
+                debugSimulationEnabled = message.debugSimulationEnabled ?? false;
+                updateDebugButtonVisibility();
                 showHome();
 
                 // Update pending requests if provided
@@ -3140,6 +3256,9 @@ import { truncate } from './utils';
 
     // Initialize in-webview toolbar (top buttons)
     initHomeToolbar();
+
+    // Initialize debug simulation panel
+    initDebugSimulation();
 
     // Initialize delegated handlers for pending items
     initPendingItemsDelegation();

@@ -24,6 +24,9 @@ export interface StoredInteraction {
     mode?: 'review' | 'walkthrough';
     requiredRevisions?: RequiredPlanRevisions[];
     status?: 'pending' | 'approved' | 'recreateWithChanges' | 'acknowledged' | 'closed' | 'cancelled';
+
+    /** True if this interaction was created via the debug simulation panel, not a real AI tool call */
+    isSimulated?: boolean;
 }
 
 // Attachment info
@@ -67,6 +70,8 @@ export interface RequestItem {
     attachments: AttachmentInfo[];
     options?: AskUserOptions;
     draftText?: string; // Draft response text (auto-saved)
+    /** True if this request was created via the debug simulation panel */
+    isSimulated?: boolean;
 }
 
 /**
@@ -129,6 +134,7 @@ export type ToWebviewMessage = | {
         historyInteractions: StoredInteraction[];
         recentInteractions: ToolCallInteraction[];
         selectedRequestId?: string;
+        debugSimulationEnabled?: boolean;
     }
     | {
         type: 'updateAttachments';
@@ -243,6 +249,25 @@ export type FromWebviewMessage = | {
         type: 'saveDraft';
         requestId: string;
         draftText: string
+    }
+    | {
+        /**
+         * Trigger a debug simulation of a tool call.
+         * The extension will fire the actual tool function as fire-and-forget,
+         * creating a real pending request / plan review panel.
+         */
+        type: 'simulateTool';
+        toolType: 'ask_user' | 'plan_review' | 'walkthrough_review';
+        params: {
+            // ask_user params
+            question?: string;
+            title?: string;
+            agentName?: string;
+            options?: AskUserOptions;
+            // plan_review / walkthrough_review params
+            plan?: string;
+            mode?: 'review' | 'walkthrough';
+        };
     };
 
 

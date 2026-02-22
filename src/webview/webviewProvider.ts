@@ -116,8 +116,9 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
     /**
      * Wait for a user response to a question.
      * Supports multiple concurrent requests.
+     * @param isSimulated - If true, this request was created via the debug simulation panel
      */
-    public async waitForUserResponse(question: string, title?: string, agentName?: string, requestId?: string, options?: AskUserOptions): Promise<UserResponseResult> {
+    public async waitForUserResponse(question: string, title?: string, agentName?: string, requestId?: string, options?: AskUserOptions, isSimulated?: boolean): Promise<UserResponseResult> {
 
         // If the view isn't available, try to open it
         if (!this._view) {
@@ -158,6 +159,7 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
                 agentName,
                 options,
                 draftText: '',
+                isSimulated,
             };
 
             this._pendingRequests.set(req, { item, resolve });
@@ -308,13 +310,17 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
             pendingPlanReviews: pendingPlanReviews.map(r => ({ id: r.id, title: r.title, status: r.status }))
         });
 
+        const config = vscode.workspace.getConfiguration('seamless-agent');
+        const debugSimulationEnabled = config.get<boolean>('debugSimulation', false);
+
         const message: ToWebviewMessage = {
             type: 'showHome',
             pendingRequests,
             pendingPlanReviews,
             historyInteractions,
             recentInteractions: this._recentInteractions,
-            selectedRequestId: this._lastOpenedRequestId || undefined
+            selectedRequestId: this._lastOpenedRequestId || undefined,
+            debugSimulationEnabled,
         };
         this._view?.webview.postMessage(message);
 
@@ -430,6 +436,13 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
                 this._handleSaveDraft(message.requestId, message.draftText);
                 break;
             }
+            case 'simulateTool': {
+                // Fire-and-forget: simulate the tool call without blocking the message handler
+                this._handleSimulateToolCall(message.toolType, message.params).catch(err => {
+                    console.error('[Seamless Agent] simulateTool error:', err);
+                });
+                break;
+            }
         }
     }
 
@@ -438,6 +451,53 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
         const pending = this._pendingRequests.get(requestId);
         if (pending) {
             pending.item.draftText = draftText;
+        }
+    }
+
+    /**
+     * Handle a debug simulation request from the webview.
+     * Creates a real pending UI request or opens a plan review panel,
+     * but marks the resulting stored interaction as isSimulated=true.
+     */
+    private async _handleSimulateToolCall(
+        toolType: 'ask_user' | 'plan_review' | 'walkthrough_review',
+        params: {
+            question?: string;
+            title?: string;
+            agentName?: string;
+            options?: import('./types').AskUserOptions;
+            plan?: string;
+            mode?: 'review' | 'walkthrough';
+        }
+    ): Promise<void> {
+        if (toolType === 'ask_user') {
+            const question = params.question || 'Simulated question';
+            const title = params.title || 'Debug Simulation';
+            const agentName = params.agentName || 'Debug';
+            // waitForUserResponse will create a real pending request (isSimulated=true)
+            // _resolveRequest will save it to history with isSimulated=true
+            await this.waitForUserResponse(question, title, agentName, undefined, params.options, true);
+        } else {
+            const plan = params.plan || '# Simulated Plan\n\nThis is a simulated plan review.';
+            const title = params.title || 'Debug Simulation';
+            const mode = (toolType === 'walkthrough_review' ? 'walkthrough' : (params.mode || 'review')) as 'review' | 'walkthrough';
+
+            // Create a cancellation token source for this simulation
+            const cts = new vscode.CancellationTokenSource();
+            try {
+                const { planReview: planReviewFn } = await import('./planReviewPanel').then(() =>
+                    import('../tools/planReview')
+                );
+                await planReviewFn(
+                    { plan, title, mode },
+                    this._context,
+                    this,
+                    cts.token,
+                    true // isSimulated
+                );
+            } finally {
+                cts.dispose();
+            }
         }
     }
 
@@ -1013,6 +1073,7 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
                     attachments: (result.attachments || []).map(a => a.uri),
                     options: pending.item.options,
                     selectedOptionLabels: selectedOptions,
+                    isSimulated: pending.item.isSimulated,
                 });
             } catch (e) {
                 console.error('[Seamless Agent] Failed to save ask_user interaction to ChatHistoryStorage:', e);
@@ -1308,6 +1369,7 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
         const historyTimeDisplay = ['relative', 'absolute', 'hybrid'].includes(rawHistoryTimeDisplay)
             ? rawHistoryTimeDisplay
             : 'hybrid';
+        const debugSimulation = config.get<boolean>('debugSimulation', false);
 
         // Replace placeholders
         const replacements: Record<string,
@@ -1382,6 +1444,16 @@ export class AgentInteractionProvider implements vscode.WebviewViewProvider {
             '{{batchSelectedCount}}': strings.batchSelectedCount,
             '{{historyTimeDisplay}}': historyTimeDisplay,
             '{{orTypeYourOwn}}': strings.orTypeYourOwn,
+            '{{debugSimulation}}': debugSimulation ? 'true' : 'false',
+            '{{debugSimulationMode}}': strings.debugSimulationMode,
+            '{{debugSimulate}}': strings.debugSimulate,
+            '{{debugClose}}': strings.debugClose,
+            '{{debugSelectTool}}': strings.debugSelectTool,
+            '{{debugAskUserPlain}}': strings.debugAskUserPlain,
+            '{{debugAskUserOptions}}': strings.debugAskUserOptions,
+            '{{debugAskUserSteps}}': strings.debugAskUserSteps,
+            '{{debugSimulatedBadge}}': strings.debugSimulatedBadge,
+            '{{debugPanelTitle}}': strings.debugPanelTitle,
         };
 
         for (const [placeholder, value] of Object.entries(replacements)) {

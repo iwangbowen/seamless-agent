@@ -16,7 +16,8 @@ export async function planReview(
     params: PlanReviewInput,
     context: vscode.ExtensionContext,
     provider: AgentInteractionProvider,
-    token: vscode.CancellationToken
+    token: vscode.CancellationToken,
+    isSimulated?: boolean
 ): Promise<PlanReviewToolResult> {
     const plan = params.plan;
     const title = params.title || 'Plan Review';
@@ -36,7 +37,8 @@ export async function planReview(
         title,
         mode,
         status: 'pending',
-        requiredRevisions: []
+        requiredRevisions: [],
+        isSimulated,
     });
 
     console.log('[Seamless Agent] planReview saved with interactionId:', interactionId);
@@ -119,7 +121,8 @@ export async function planReviewApproval(
     params: PlanReviewApprovalInput,
     context: vscode.ExtensionContext,
     provider: AgentInteractionProvider,
-    token: vscode.CancellationToken
+    token: vscode.CancellationToken,
+    isSimulated?: boolean
 ): Promise<PlanReviewToolResult> {
     return planReview(
         {
@@ -130,7 +133,8 @@ export async function planReviewApproval(
         },
         context,
         provider,
-        token
+        token,
+        isSimulated
     );
 }
 
@@ -141,7 +145,8 @@ export async function walkthroughReview(
     params: WalkthroughReviewInput,
     context: vscode.ExtensionContext,
     provider: AgentInteractionProvider,
-    token: vscode.CancellationToken
+    token: vscode.CancellationToken,
+    isSimulated?: boolean
 ): Promise<PlanReviewToolResult> {
     return planReview(
         {
@@ -152,6 +157,7 @@ export async function walkthroughReview(
         },
         context,
         provider,
-        token
+        token,
+        isSimulated
     );
 }

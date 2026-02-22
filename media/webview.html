@@ -65,6 +65,19 @@
               data-badge-for="history"
             ></span>
           </button>
+          <!-- Debug simulation button - only shown when debugSimulation setting is enabled -->
+          <button
+            type="button"
+            id="debug-simulate-btn"
+            class="home-toolbar-btn debug-toolbar-btn"
+            data-tab="debug"
+            title="{{debugSimulationMode}}"
+            aria-label="{{debugSimulationMode}}"
+            aria-pressed="false"
+            style="display:none"
+          >
+            <span class="codicon codicon-bug"></span>
+          </button>
         </div>
 
         <!-- Content area - shows selected tab content -->
@@ -159,6 +172,38 @@
             </div>
             <div id="history-list">
               <p class="placeholder">{{noChats}}</p>
+            </div>
+          </div>
+
+          <!-- Debug Simulation Tab -->
+          <div id="content-debug" class="tab-pane hidden">
+            <div class="debug-tab-panel">
+              <p class="debug-tab-description">{{debugSelectTool}}</p>
+              <div class="debug-tab-buttons">
+                <p class="debug-section-label">ask_user</p>
+                <button type="button" class="debug-tool-btn" data-tool="ask_user_plain">
+                  <span class="codicon codicon-comment"></span>
+                  <span>{{debugAskUserPlain}}</span>
+                </button>
+                <button type="button" class="debug-tool-btn" data-tool="ask_user_options">
+                  <span class="codicon codicon-list-selection"></span>
+                  <span>{{debugAskUserOptions}}</span>
+                </button>
+                <button type="button" class="debug-tool-btn" data-tool="ask_user_steps">
+                  <span class="codicon codicon-symbol-enum"></span>
+                  <span>{{debugAskUserSteps}}</span>
+                </button>
+                <p class="debug-section-label">plan_review</p>
+                <button type="button" class="debug-tool-btn" data-tool="plan_review">
+                  <span class="codicon codicon-file-text"></span>
+                  <span>plan_review</span>
+                </button>
+                <p class="debug-section-label">walkthrough_review</p>
+                <button type="button" class="debug-tool-btn" data-tool="walkthrough_review">
+                  <span class="codicon codicon-book"></span>
+                  <span>walkthrough_review</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -360,6 +405,8 @@
       };
       window.__CONFIG__ = {
         historyTimeDisplay: "{{historyTimeDisplay}}",
+        debugSimulation: {{debugSimulation}},
+        debugSimulatedBadge: "{{debugSimulatedBadge}}",
       };
     </script>
     <script nonce="{{nonce}}" src="{{scriptUri}}"></script>

@@ -171,4 +171,16 @@ export const strings = {
 
     // Errors
     get noSuchInteraction() { return localize('error.noSuchInteraction'); },
+
+    // Debug simulation
+    get debugSimulationMode() { return localize('debug.simulationMode'); },
+    get debugSimulate() { return localize('debug.simulate'); },
+    get debugClose() { return localize('debug.close'); },
+    get debugSelectTool() { return localize('debug.selectTool'); },
+    get debugAskUserPlain() { return localize('debug.askUserPlain'); },
+    get debugAskUserOptions() { return localize('debug.askUserOptions'); },
+    get debugAskUserSteps() { return localize('debug.askUserSteps'); },
+    get debugSimulatedBadge() { return localize('debug.simulatedBadge'); },
+    get debugSimulatedTooltip() { return localize('debug.simulatedTooltip'); },
+    get debugPanelTitle() { return localize('debug.panelTitle'); },
 };
