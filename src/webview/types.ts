@@ -13,7 +13,7 @@ export interface StoredInteraction {
     // For ask_user
     question?: string;
     response?: string;
-    attachments?: string[];
+    attachments?: AttachmentInfo[];
     agentName?: string;
     options?: AskUserOptions;
     selectedOptionLabels?: Record<string, string[]>;
@@ -166,6 +166,8 @@ export type ToWebviewMessage = | {
         type: 'clear'
     };
 
+export type LogLevel = 'info' | 'warn' | 'error' | 'debug';
+
 export type FromWebviewMessage = | {
     type: 'submit';
     response: string;
@@ -268,7 +270,46 @@ export type FromWebviewMessage = | {
             plan?: string;
             mode?: 'review' | 'walkthrough';
         };
-    };
+    }
+    | {
+        type: 'approve';
+        comments: RequiredPlanRevisions[]
+    }
+    | {
+        type: 'reject';
+        comments: RequiredPlanRevisions[]
+    }
+    | {
+        type: 'acknowledge';
+        comments: RequiredPlanRevisions[]
+    }
+    | {
+        type: 'close';
+        comments: RequiredPlanRevisions[]
+    }
+    | {
+        type: 'addComment';
+        revisedPart: string;
+        revisorInstructions: string
+    }
+    | {
+        type: 'editComment';
+        index: number;
+        revisorInstructions: string
+    }
+    | {
+        type: 'removeComment';
+        index: number
+    }
+    | {
+        type: 'exportPlan'
+    }
+    | {
+        type: 'log';
+        level: LogLevel;
+        message: any[];
+    }
+    | { type: 'ready' };
 
 
 // Plan review types (shared between extension and webview)
@@ -318,4 +359,10 @@ export interface UserResponseResult {
     responded: boolean;
     response: string;
     attachments: AttachmentInfo[];
+}
+
+export interface VSCodeAPI {
+    postMessage(message: FromWebviewMessage): void;
+    getState(): unknown;
+    setState(state: unknown): void;
 }

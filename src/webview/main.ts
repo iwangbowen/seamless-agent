@@ -174,15 +174,17 @@ import type {
     RequestItem,
     FileSearchResult,
     ToolCallInteraction,
-    RequiredPlanRevisions,
-    StoredInteraction
+    StoredInteraction,
+    VSCodeAPI,
 } from './types';
-import { truncate } from './utils';
+import { truncate, getLogger } from './utils';
+
 
 // Webview initialization
 (function () {
     // Acquire VS Code API
     const vscode = acquireVsCodeApi();
+    const logger = getLogger(vscode);
 
     // State
     let currentRequestId: string | null = null;
@@ -234,7 +236,8 @@ import { truncate } from './utils';
         {
             storageKey: 'seamless-agent-input-history',
             maxSize: 50
-        }
+        },
+        logger // Not very elegant but we can't acquire vscode api twice
     );
 
     // Tab content elements
@@ -2027,19 +2030,78 @@ import { truncate } from './utils';
                     : (interaction.response || noResponseLabel);
 
                 const attachmentsHtml = (interaction.attachments && interaction.attachments.length > 0)
-                    ? (() => (
-                        el('div', { className: 'detail-section detail-section-plain' },
+                    ? (() => {
+                        const hoverPreview = document.querySelector('.image-hover-preview') as HTMLElement;
+                        const hoverPreviewImg = hoverPreview?.querySelector('img') as HTMLImageElement;
+
+                        const chips = (interaction.attachments as (AttachmentInfo | string)[]).map((rawAtt) => {
+                            // Backward compat: old stored data may be plain URI strings
+                            if (typeof rawAtt === 'string') {
+                                const name = rawAtt.split('/').pop() || rawAtt;
+                                return el('span', { className: 'attachment-chip' },
+                                    codicon('file'), ' ', name
+                                );
+                            }
+                            const att = rawAtt as AttachmentInfo;
+                            const isImage = att.isImage || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(att.name);
+                            const isFolder = att.isFolder;
+                            const hasThumbnailOrUri = !!(att.thumbnail || att.uri);
+
+                            let iconClass: string;
+                            let displayName: string;
+                            let extraClass: string;
+
+                            if (isFolder) {
+                                iconClass = 'folder';
+                                displayName = att.name;
+                                extraClass = '';
+                            } else if (isImage) {
+                                iconClass = 'file-media';
+                                displayName = att.id?.startsWith('img_') ? (window.__STRINGS__?.pastedImage || 'Pasted Image') : att.name;
+                                extraClass = ' attachment-chip-image';
+                            } else {
+                                iconClass = getFileIcon(att.name);
+                                displayName = att.name;
+                                extraClass = '';
+                            }
+
+                            const chipOptions: Parameters<typeof el>[1] = {
+                                className: `attachment-chip${extraClass}`,
+                                title: att.uri || att.name,
+                            };
+
+                            let chip: HTMLElement;
+
+                            if (isImage && hasThumbnailOrUri && hoverPreview && hoverPreviewImg) {
+                                chipOptions.on = {
+                                    mouseenter: () => {
+                                        const src = att.thumbnail || att.uri;
+                                        hoverPreviewImg.setAttribute('src', src);
+                                        hoverPreviewImg.setAttribute('alt', att.name);
+                                        const rect = chip.getBoundingClientRect();
+                                        hoverPreview.style.top = `${rect.top - hoverPreview.offsetHeight - 8}px`;
+                                        hoverPreview.classList.remove('hidden');
+                                    },
+                                    mouseleave: () => {
+                                        hoverPreview.classList.add('hidden');
+                                    }
+                                };
+                            }
+
+                            chip = el('span', chipOptions,
+                                codicon(iconClass), ' ', displayName
+                            );
+                            return chip;
+                        });
+
+                        return el('div', { className: 'detail-section detail-section-plain' },
                             el('div', { className: 'detail-label' },
-                                el('span', { className: 'codicon codicon-file' }),
+                                codicon('paperclip'),
                                 attachmentsLabel
                             ),
-                            el('div', { className: 'detail-attachments' },
-                                ...interaction.attachments.map(att => {
-                                    const name = att.split('/').pop() || att;
-                                    return el('span', { className: 'attachment-chip', text: name });
-                                })
-                            ))
-                    ))() : tn('');
+                            el('div', { className: 'detail-attachments' }, ...chips)
+                        );
+                    })() : tn('');
 
                 // Build read-only options display if the interaction had options
                 const optionsHtml = renderReadOnlyOptionsDetail(interaction);
@@ -2790,7 +2852,7 @@ import { truncate } from './utils';
             draftSaveTimer = setTimeout(() => {
                 vscode.postMessage({
                     type: 'saveDraft',
-                    requestId: currentRequestId,
+                    requestId: currentRequestId!,
                     draftText: value
                 });
             }, 500); // Save after 500ms of inactivity
@@ -3029,12 +3091,12 @@ import { truncate } from './utils';
 
     // IME composition handlers - prevent scroll issues on Windows during IME input
     responseInput?.addEventListener('compositionstart', () => {
-        console.log(`composing start`)
+        logger.log(`composing start`)
         isComposing = true;
     });
 
     responseInput?.addEventListener('compositionend', () => {
-        console.log(`composing end`)
+        logger.log(`composing end`)
         isComposing = false;
     });
 
@@ -3154,7 +3216,10 @@ import { truncate } from './utils';
         switch (message.type) {
             case 'showQuestion': showQuestion(message.question, message.title, message.requestId, message.options, message.pendingCount, message.requestOrder, message.attachments);
                 break;
-            case 'showList': showList(message.requests, message.selectedRequestId);
+            case 'showList': if (message.requests && message.requests.length > 0) {
+                switchTab('pending');
+            }
+                showList(message.requests, message.selectedRequestId);
                 break;
             case 'updatePendingCount': updatePendingCountBadge(message.count, message.requestOrder);
                 break;
@@ -3239,7 +3304,12 @@ import { truncate } from './utils';
                 }
                 // If cancelled (success = false), stay in batch mode with current selection
                 break;
-            case 'clear': showHome();
+            case 'clear':
+                showHome();
+                // Clear pending requests list when session ends
+                if (pendingRequestsList) {
+                    clearChildren(pendingRequestsList);
+                }
                 hideAutocomplete();
                 break;
         }
@@ -3269,8 +3339,4 @@ import { truncate } from './utils';
 })();
 
 // Type declaration for VS Code API
-declare function acquireVsCodeApi(): {
-    postMessage(message: unknown): void;
-    getState(): unknown;
-    setState(state: unknown): void;
-};
+declare function acquireVsCodeApi(): VSCodeAPI;
